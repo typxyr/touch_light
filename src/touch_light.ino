@@ -21,10 +21,10 @@
 // Number each Filimin starting at 1.
 String particleId[] = {
   "",                         // 0
-  "330022001547353236343033", // pblesi
-  "2d0047001247353236343033", // carol
-  "2a0026000b47353235303037", // cindy
-  "2e003e001947353236343033"  // tammy
+  "", // Quyndylten
+  "", // Jen
+  "", // Pammer
+  ""  // Helynne
 };
 
 int particleColors[] = {
