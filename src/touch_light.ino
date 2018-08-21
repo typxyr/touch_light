@@ -1,3 +1,6 @@
+// This #include statement was automatically added by the Particle IDE.
+#include <neopixel.h>
+
 /*
  * Project: touch_light
  * Description: A touch light that syncs with other touch lights. Adapted from
@@ -10,21 +13,19 @@
 #include "neopixel.h"
 #include "application.h"
 
-#include "wifi_creds.h"
-
 // CONFIGURATION SETTINGS START
 // DEBUG SETTINGS:
 #define D_SERIAL false
 #define D_WIFI false
 
-#define NUM_PARTICLES 4 // number of touch lights in your group
+#define NUM_PARTICLES 3 // number of touch lights in your group
 // Number each Filimin starting at 1.
 String particleId[] = {
   "",                         // 0
-  "", // Quyndylten
-  "", // Jen
-  "", // Pammer
-  ""  // Helynne
+  "", // quyndylten
+  "", // gerbil
+  "", // wizard_jetpack
+  "" // Hamster
 };
 
 int particleColors[] = {
@@ -139,15 +140,9 @@ double tBaselineExternal = 0;
 
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(PIXEL_COUNT, PIXEL_PIN, PIXEL_TYPE);
 
-#ifdef WIFI_CREDENTIALS_SPECIFIED
-SYSTEM_MODE(SEMI_AUTOMATIC);
-#endif
 
 void setup()
 {
-#ifdef WIFI_CREDENTIALS_SPECIFIED
-  setupWifi();
-#endif
 
   Particle.subscribe("touch_event", handleTouchEvent, MY_DEVICES);
 
@@ -207,19 +202,19 @@ void loop() {
 //------------------------------------------------------------
 // Functions used during setup
 //------------------------------------------------------------
-void setupWifi() {
-  WiFi.on();
-  WiFi.disconnect();
-  WiFi.clearCredentials();
-  int numWifiCreds = sizeof(wifiCreds) / sizeof(*wifiCreds);
-  for (int i = 0; i < numWifiCreds; i++) {
-    credentials creds = wifiCreds[i];
-    WiFi.setCredentials(creds.ssid, creds.password, creds.authType, creds.cipher);
-  }
-  WiFi.connect();
-  waitUntil(WiFi.ready);
-  Particle.connect();
-}
+//void setupWifi() {
+//  WiFi.on();
+//  WiFi.disconnect();
+//  WiFi.clearCredentials();
+//  int numWifiCreds = sizeof(wifiCreds) / sizeof(*wifiCreds);
+//  for (int i = 0; i < numWifiCreds; i++) {
+//    credentials creds = wifiCreds[i];
+//    WiFi.setCredentials(creds.ssid, creds.password, creds.authType, creds.cipher);
+//  }
+//  WiFi.connect();
+//  waitUntil(WiFi.ready);
+//  Particle.connect();
+//}
 
 int getMyId(String particleId[], int numParticles) {
   int id = 0;
