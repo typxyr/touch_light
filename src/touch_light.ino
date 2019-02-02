@@ -1,31 +1,47 @@
-// This #include statement was automatically added by the Particle IDE.
-#include <neopixel.h>
-
 /*
  * Project: touch_light
  * Description: A touch light that syncs with other touch lights. Adapted from
  *              http://www.instructables.com/id/Networked-RGB-Wi-Fi-Decorative-Touch-Lights/
  * Author: Patrick Blesi
  * Date: 2017-12-09
+ * Color and Timing Modifications
+ * Modifications: Jeff Bush (coderforlife)
+ * Date: 2018-12-21
+ *
+ * WiFi Helper and Personal DeviceIds
+ * Modifications: Aaron Jarvis (typxyr)
+ * Date: 2019-02-02
  *
  */
 
 #include "neopixel.h"
 #include "application.h"
+//#include "Particle.h"
+//#include "softap_http.h"
 
 // CONFIGURATION SETTINGS START
 // DEBUG SETTINGS:
 #define D_SERIAL false
 #define D_WIFI false
 
+//WiFi setup
+SYSTEM_MODE(SEMI_AUTOMATIC);
+SYSTEM_THREAD(ENABLED);
+
+int LED = D7;
+bool newWifi = false;
+
+String touchEventName = "touch_event";
+
 #define NUM_PARTICLES 3 // number of touch lights in your group
 // Number each Filimin starting at 1.
 String particleId[] = {
   "",                         // 0
-  "", // quyndylten
-  "", // gerbil
-  "", // wizard_jetpack
-  "" // Hamster
+  "", // Jen
+  "", // Lynne
+  "", // Carol
+  "", // Pam
+  ""  // Aaron
 };
 
 int particleColors[] = {
@@ -33,8 +49,12 @@ int particleColors[] = {
   90,  // Magenta
   170, // Blue
   79,  // Orange
-  131  // Purple
+  131, // Purple
+  250  // Unknown
 };
+
+
+#define ARRAY_SIZE(a) sizeof(a)/sizeof(a[0])
 
 // TWEAKABLE VALUES FOR CAP SENSING. THE BELOW VALUES WORK WELL AS A STARTING PLACE:
 // BASELINE_VARIANCE: The higher the number the less the baseline is affected by
@@ -58,13 +78,15 @@ const int minMaxColorDiffs[2][2] = {
 
 // END VALUE, TIME
 // 160 is approximately 1 second
-const long envelopes[6][2] = {
-  {0, 0},      // NOT USED
-  {255, 30},   // ATTACK
-  {200, 240},  // DECAY
-  {200, 1000}, // SUSTAIN
-  {150, 60},   // RELEASE1
-  {0, 1000000} // RELEASE2 (65535 is about 6'45")
+const long envelopes[8][2] = {
+  {0, 0},       // NOT USED
+  {255, 30},    // ATTACK   ~200 ms
+  {205, 240},   // DECAY    ~1.5 sec
+  {205, 1000},  // SUSTAIN  ~6.25 sec
+  {155, 60},    // RELEASE1 ~400 ms to go from ~80% brightness to ~60% brightness
+  {40, 300000}, // RELEASE2 ~30 min to go from ~60% brightness to ~15% brightness
+  {10, 300000}, // RELEASE3 ~30 min to go from ~15% brightness to ~4% brightness
+  {10, 0},      // HOLD     will be held at ~4% brightness forever
 };
 
 #define PERIODIC_UPDATE_TIME 5 // seconds
@@ -78,7 +100,9 @@ const long envelopes[6][2] = {
 #define SUSTAIN 3
 #define RELEASE1 4
 #define RELEASE2 5
-#define OFF 6
+#define RELEASE3 6
+#define HOLD 7
+#define OFF 8
 
 #define LOCAL_CHANGE 0
 #define REMOTE_CHANGE 1
@@ -108,7 +132,7 @@ int rPin = D3;
 unsigned char myId = 0;
 
 int currentEvent = tEVENT_NONE;
-int eventTime = Time.now();
+int eventTime = 0;
 int eventTimePrecision = random(INT_MAX);
 
 int initColor = 0;
@@ -140,11 +164,12 @@ double tBaselineExternal = 0;
 
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(PIXEL_COUNT, PIXEL_PIN, PIXEL_TYPE);
 
+STARTUP(WiFi.setListenTimeout(120));
 
 void setup()
 {
 
-  Particle.subscribe("touch_event", handleTouchEvent, MY_DEVICES);
+  Particle.subscribe(touchEventName, handleTouchEvent, MY_DEVICES);
 
   if (D_SERIAL) Serial.begin(9600);
   if (D_WIFI) {
@@ -158,7 +183,7 @@ void setup()
   pinMode(sPin, OUTPUT);
   attachInterrupt(rPin, touchSense, RISING);
 
-  myId = getMyId(particleId, NUM_PARTICLES);
+  myId = getMyId(particleId, ARRAY_SIZE(particleId));
 
   flashWhite(&strip);
 
@@ -168,9 +193,37 @@ void setup()
 
   traverseColorWheel(&strip);
   fade(&strip);
+
+  WiFi.on();
+  WiFi.connect();
+  if(waitFor(WiFi.ready, 15000)){
+    for(int i = 0; i < 3; i++){
+      digitalWrite(LED, HIGH);
+      delay(100);
+      digitalWrite(LED, LOW);
+      delay(100);
+    }
+    Particle.connect();
+  }
+  else {
+    for(int i = 0; i < 6; i++){
+      digitalWrite(LED, HIGH);
+      delay(100);
+      digitalWrite(LED, LOW);
+      delay(100);
+    }
+    WiFi.disconnect();
+    newWiFi = true;
+    WiFi.listen();
+  }
 }
 
 void loop() {
+
+  if ((newWiFi) && (!WiFi.listening())){
+          System.reset();
+  }
+
   int touchEvent = touchEventCheck();
 
   if (touchEvent == tEVENT_NONE) {
@@ -202,19 +255,19 @@ void loop() {
 //------------------------------------------------------------
 // Functions used during setup
 //------------------------------------------------------------
-//void setupWifi() {
-//  WiFi.on();
-//  WiFi.disconnect();
-//  WiFi.clearCredentials();
-//  int numWifiCreds = sizeof(wifiCreds) / sizeof(*wifiCreds);
-//  for (int i = 0; i < numWifiCreds; i++) {
-//    credentials creds = wifiCreds[i];
-//    WiFi.setCredentials(creds.ssid, creds.password, creds.authType, creds.cipher);
-//  }
-//  WiFi.connect();
-//  waitUntil(WiFi.ready);
-//  Particle.connect();
-//}
+void setupWifi() {
+  WiFi.on();
+  WiFi.disconnect();
+  WiFi.clearCredentials();
+  int numWifiCreds = sizeof(wifiCreds) / sizeof(*wifiCreds);
+  for (int i = 0; i < numWifiCreds; i++) {
+    credentials creds = wifiCreds[i];
+    WiFi.setCredentials(creds.ssid, creds.password, creds.authType, creds.cipher);
+  }
+  WiFi.connect();
+  waitUntil(WiFi.ready);
+  Particle.connect();
+}
 
 int getMyId(String particleId[], int numParticles) {
   int id = 0;
@@ -249,19 +302,17 @@ void traverseColorWheel(Adafruit_NeoPixel* strip) {
       strip->setPixelColor(j, color);
       strip->show();
     }
-    delay(1);
   }
 }
 
 void fade(Adafruit_NeoPixel* strip) {
   int numPixels = strip->numPixels();
-  for (int j = 255; j >= 0; j--) {
+  for (int j = 255; j >= 0; j-=2) {
     uint32_t color = wheelColor(255, j);
     for (byte k = 0; k < numPixels; k++) {
       strip->setPixelColor(k, color);
       strip->show();
     }
-    delay(1);
   }
 }
 
@@ -409,8 +460,8 @@ void handleTouchEvent(const char *event, const char *data) {
     Particle.publish("touch_response", response, 61, PRIVATE);
   }
 
-  if (deviceId == myId) return;
-  if (serverEventTime < eventTime) return;
+  if (deviceId == myId) { return; }
+  if (serverEventTime < eventTime) { return; }
   // Race condition brought colors out of sync
   if (
     serverEventTime == eventTime &&
@@ -422,7 +473,7 @@ void handleTouchEvent(const char *event, const char *data) {
     changeState(ATTACK, REMOTE_CHANGE);
     return;
   }
-  if (serverEventTime == eventTime && serverEventTimePrecision <= eventTimePrecision) return;
+  if (serverEventTime == eventTime && serverEventTimePrecision <= eventTimePrecision) { return; }
 
   // Valid remote update
   setEvent(serverEvent, serverEventTime, serverEventTimePrecision);
@@ -491,7 +542,7 @@ void publishTouchEvent(int event, int color, int time, int timePrecision) {
                     String(color) + "," +
                     String(time)  + "," +
                     String(timePrecision);
-  Particle.publish("touch_event", response, 60, PRIVATE);
+  Particle.publish(touchEventName, response, 60, PRIVATE);
 }
 
 void updateState() {
@@ -518,8 +569,18 @@ void updateState() {
       break;
     case RELEASE2:
       if (loopCount >= envelopes[RELEASE2][TIME]) {
-        changeState(OFF, LOCAL_CHANGE);
+        changeState(RELEASE3, LOCAL_CHANGE);
       }
+      break;
+    case RELEASE3:
+      if (loopCount >= envelopes[RELEASE3][TIME]) {
+        changeState(HOLD, LOCAL_CHANGE);
+      }
+      break;
+    case HOLD:
+      /*if (loopCount >= envelopes[HOLD][TIME]) {
+        changeState(OFF, LOCAL_CHANGE);
+      }*/
       break;
   }
 
@@ -536,6 +597,7 @@ void updateState() {
 
 int getCurrentBrightness(unsigned char state, int initBrightness, int loopCount) {
   if (state == OFF) return 0;
+  if (envelopes[state][TIME] == 0) return envelopes[state][END_VALUE];
   int brightnessDistance = envelopes[state][END_VALUE] - initBrightness;
   int brightnessDistanceXElapsedTime = brightnessDistance * loopCount / envelopes[state][TIME];
   return min(255, max(0, initBrightness + brightnessDistanceXElapsedTime));
@@ -549,14 +611,13 @@ int getCurrentColor(int finalColor, int initColor, int colorLoopCount) {
 }
 
 int calcColorChange(int currentColor, int finalColor) {
-  int colorChange = finalColor - currentColor;
-  int direction = (colorChange < 0) * 2 - 1;
-  colorChange += direction * (abs(colorChange) > 127) * 256;
-  return colorChange;
+  int d = currentColor - finalColor;
+  return abs(d) > 127 ? d : -d;
 }
 
 void updateNeoPixels(uint32_t color) {
-  for(char i = 0; i < strip.numPixels(); i++) {
+  uint16_t n = strip.numPixels();
+  for (char i = 0; i < n; i++) {
     strip.setPixelColor(i, color);
   }
   strip.show();
@@ -569,27 +630,26 @@ void updateNeoPixels(uint32_t color) {
 // Wheel
 //------------------------------------------------------------
 
-uint32_t wheelColor(byte WheelPos, byte iBrightness) {
-  float R, G, B;
-  float brightness = iBrightness / 255.0;
+byte scale(byte x, float scale) {
+    return (byte)(x * scale + .5);
+}
 
-  if (WheelPos < 85) {
-    R = WheelPos * 3;
-    G = 255 - WheelPos * 3;
-    B = 0;
-  } else if (WheelPos < 170) {
-    WheelPos -= 85;
-    R = 255 - WheelPos * 3;
-    G = 0;
-    B = WheelPos * 3;
-  } else {
-    WheelPos -= 170;
-    R = 0;
-    G = WheelPos * 3;
-    B = 255 - WheelPos * 3;
-  }
-  R = R * brightness + .5;
-  G = G * brightness + .5;
-  B = B * brightness + .5;
-  return strip.Color((byte) R,(byte) G,(byte) B);
+// Converts HSV color to RGB color
+// hue is from 0 to 255 around the circle
+// saturation is fixed to max
+// value (brightness) is from 0 to 255
+uint32_t wheelColor(byte hue, byte value) {
+    //hue %= 256;
+    //if (hue < 0) { hue += 256; }
+    int H6 = 6*(int)hue;
+    byte R = 0, G = 0, B = 0;
+    // each 1/6 of a circle (42.5 is 1/6 of 255)
+    if (hue < 43) { R = 255; G = H6; }
+    else if (hue < 86) { R = 510-H6; G = 255; }
+    else if (hue < 128) { G = 255; B = H6-510; }
+    else if (hue < 171) { G = 1020-H6; B = 255; }
+    else if (hue < 213) { R = H6-1020; B = 255; }
+    else { R = 255; B = 1530-H6; }
+    float brightness = value / 255.0;
+    return strip.Color(scale(R, brightness), scale(G, brightness), scale(B, brightness));
 }
