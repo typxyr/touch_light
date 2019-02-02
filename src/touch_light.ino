@@ -29,7 +29,7 @@ SYSTEM_MODE(SEMI_AUTOMATIC);
 SYSTEM_THREAD(ENABLED);
 
 int LED = D7;
-bool newWifi = false;
+bool newWiFi = false;
 
 String touchEventName = "touch_event";
 
@@ -255,19 +255,19 @@ void loop() {
 //------------------------------------------------------------
 // Functions used during setup
 //------------------------------------------------------------
-void setupWifi() {
-  WiFi.on();
-  WiFi.disconnect();
-  WiFi.clearCredentials();
-  int numWifiCreds = sizeof(wifiCreds) / sizeof(*wifiCreds);
-  for (int i = 0; i < numWifiCreds; i++) {
-    credentials creds = wifiCreds[i];
-    WiFi.setCredentials(creds.ssid, creds.password, creds.authType, creds.cipher);
-  }
-  WiFi.connect();
-  waitUntil(WiFi.ready);
-  Particle.connect();
-}
+//void setupWifi() {
+//  WiFi.on();
+//  WiFi.disconnect();
+//  WiFi.clearCredentials();
+//  int numWifiCreds = sizeof(wifiCreds) / sizeof(*wifiCreds);
+//  for (int i = 0; i < numWifiCreds; i++) {
+//    credentials creds = wifiCreds[i];
+//    WiFi.setCredentials(creds.ssid, creds.password, creds.authType, creds.cipher);
+//  }
+//  WiFi.connect();
+//  waitUntil(WiFi.ready);
+//  Particle.connect();
+//}
 
 int getMyId(String particleId[], int numParticles) {
   int id = 0;
